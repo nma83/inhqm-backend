@@ -27,24 +27,37 @@ def bbox(p1, p2):
 
 class pgdb:
     _conn = None
+    _cur = None
     _qualityIndex = { 'bad': 0, 'intermediate': 1, 'good': 2, 'excellent': 3, 'none': 99 }
 
     def __init__(self):
         try:
             self._conn = psycopg2.connect("dbname='india' user='postgres' host='localhost' password='toseetosee'")
             psycopg2.extras.register_hstore(self._conn)
+            self._cur = self._conn.cursor()
         except:
             print "I am unable to connect to the database"
     
+    def getNodes(self, search):
+        query = """select name, st_x(st_transform(way, 4674)), st_y(st_transform(way, 4674)) 
+                    from planet_osm_point where name ilike %s and place is not null limit 10;"""
+        search = search + '%'
+        self._cur.execute(query, (search,))
+        rows = self._cur.fetchall()
+        return rows
+
+    """
+    Get all the highways in the bounding box bounds
+    """
     def getHighway(self, bounds):
-        cur = self._conn.cursor()
         ret = { 'ways': [], 'quality': 'none' }
         bb = bbox(bounds[0], bounds[1])
         query = """select osm_id, highway, tags from planet_osm_roads 
                     where planet_osm_roads.way && ST_Transform( 
-                    ST_MakeEnvelope(%s, %s, %s, %s, 4326), 3857) and planet_osm_roads.highway is not null""" #in ('motorway', 'trunk', 'primary', 'secondary', 'tertiary')"""
-        cur.execute(query, (bb[0][0], bb[0][1], bb[1][0], bb[1][1]))
-        rows = cur.fetchall()
+                    ST_MakeEnvelope(%s, %s, %s, %s, 4326), 3857) and planet_osm_roads.highway is not null""" 
+        #in ('motorway', 'trunk', 'primary', 'secondary', 'tertiary')"""
+        self._cur.execute(query, (bb[0][0], bb[0][1], bb[1][0], bb[1][1]))
+        rows = self._cur.fetchall()
         worst = 'none'
         for row in rows:
             node = { 'id': row[0], 'highway': row[1] }
@@ -58,7 +71,10 @@ class pgdb:
                 worst = node['smoothness']
         ret['quality'] = worst
         return ret
-    
+ 
+    """
+    Function called from API to get highways through a route of points
+    """
     def waysFromNodes(self, points):
         ways = []
         for n in range(1, len(points)):
@@ -66,4 +82,15 @@ class pgdb:
             ways.append(highway)
         return ways
 
+    """
+    Function called from API to save highways along with quality
+    """
+    def saveWays(self, ways):
+	quality = ways['quality']
+        query = """update planet_osm_roads set tags = tags 
+                   || '""" + ('"smoothness"=>"%s"' % (quality,)) + """' ::hstore where osm_id in %s"""
+        #for way in ways['ways']:
+        if len(ways['ways']) > 0:
+            self._cur.execute(query, (tuple(ways['ways']),))
+            self._conn.commit()
 

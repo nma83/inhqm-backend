@@ -11,11 +11,23 @@ def view():
     ways = pgdb.waysFromNodes(nodes['body'])
     return json.dumps(ways)
 
+@application.route("/search")
+def search():
+    nodesRet = []
+    searchword = request.args.get('q', '')
+    if searchword != '':
+        nodes = pgdb.getNodes(searchword)
+    else:
+        nodes = []
+    for i in nodes:
+        nodesRet.append({ 'value': i[0], 'label': [i[1], i[2]] })
+    return json.dumps(nodesRet)
+
 @application.route("/edit", methods=['POST'])
 def edit():
     ways = request.get_json()
     pgdb.saveWays(ways['body'])
-    return json.dumps({ code: 'Ok' })
+    return json.dumps({ 'code': 'Ok' })
 
 if __name__ == "__main__":
     application.run(host='0.0.0.0', port=8080)
